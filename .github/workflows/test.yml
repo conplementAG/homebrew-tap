@@ -1,0 +1,49 @@
+name: test
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+  push:
+    branches: [main]
+
+  workflow_dispatch:
+
+# Note: all jobs in this workflow run on GitHub-hosted runners.
+# None of them need authenticated (token) access to the repository.
+#
+# If this were to change and they do need authenticated access, make sure to use the
+# self-hosted runners listed on the "Settings" -> "Actions" -> "Runners" page.
+#
+jobs:
+  install:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Git
+        uses: Homebrew/actions/git-user-config@master
+
+      # This action automatically installs the locally checked out tap.
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Check the CLI formula
+        run: |
+          brew style copsctl
+
+      - name: Install CLI
+        run: |
+          brew install copsctl
+
+      - name: Run CLI
+        run: |
+          copsctl --version

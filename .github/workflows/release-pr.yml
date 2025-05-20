@@ -1,0 +1,48 @@
+name: release-pr
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        required: true
+      darwin_x86_64_sha:
+        type: string
+        required: true
+      darwin_arm64_sha:
+        type: string
+        required: true
+      linux_x86_64_sha:
+        type: string
+        required: true
+      linux_arm64_sha:
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Change to a new release
+        run: |
+          sed -i -E "s/version \"(.*)\"/version \"${{ github.event.inputs.version }}\"/" Formula/copsctl.rb
+          sed -i -E "s/darwin_x86_64_sha = \"(.*)\"/darwin_x86_64_sha = \"${{ github.event.inputs.darwin_x86_64_sha }}\"/" Formula/copsctl.rb
+          sed -i -E "s/darwin_arm64_sha = \"(.*)\"/darwin_arm64_sha = \"${{ github.event.inputs.darwin_arm64_sha }}\"/" Formula/copsctl.rb
+          sed -i -E "s/linux_x86_64_sha = \"(.*)\"/linux_x86_64_sha = \"${{ github.event.inputs.linux_x86_64_sha }}\"/" Formula/copsctl.rb
+          sed -i -E "s/linux_arm64_sha = \"(.*)\"/linux_arm64_sha = \"${{ github.event.inputs.linux_arm64_sha }}\"/" Formula/copsctl.rb
+
+      - name: Create a release pull request
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: Release CLI v${{ github.event.inputs.version }}
+          body: Release CLI v${{ github.event.inputs.version }}
+          branch: release-v${{ github.event.inputs.version }}
+          title: 'Release CLI v${{ github.event.inputs.version }}'

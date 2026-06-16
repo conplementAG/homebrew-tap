@@ -48,6 +48,21 @@ To verify the installation and check the version:
 copsctl --version
 ```
 
+## Maintaining the Formula
+
+To update the `copsctl` formula, run the **update-formula** workflow
+(Actions → "update-formula" → Run workflow), or via the CLI:
+
+```bash
+# Bump to the latest copsctl release (version auto-detected)
+gh workflow run update-formula.yml --repo conplementAG/homebrew-tap
+
+# …or pin a specific version
+gh workflow run update-formula.yml --repo conplementAG/homebrew-tap -f version=0.20.0
+```
+
+The workflow resolves the checksums automatically and commits the bump to `main`.
+
 ## Contributing
 
 If you'd like to contribute to this tap or report issues, please visit our [GitHub repository](https://github.com/conplementAG/homebrew-tap).

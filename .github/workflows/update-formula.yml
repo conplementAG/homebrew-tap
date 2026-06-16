@@ -1,25 +1,20 @@
-name: release-pr
+name: update-formula
 
+# Manually-triggered formula bump. Provide the copsctl version; the checksums are
+# resolved from the release's checksums.txt and committed straight to main.
 on:
-  # Triggered automatically by the copsctl release workflow once a new
-  # release has been published (see conplementAG/copsctl .github/workflows/release.yml).
-  repository_dispatch:
-    types: [copsctl-release]
-
-  # Manual fallback: provide the version, checksums are resolved automatically.
   workflow_dispatch:
     inputs:
       version:
-        description: copsctl version to release (with or without leading "v")
+        description: copsctl version (leave empty to use the latest release)
         type: string
-        required: true
+        required: false
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
-  release-pr:
+  update-formula:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,14 +22,16 @@ jobs:
 
       - name: Resolve version and checksums
         id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          version="${{ github.event.inputs.version || github.event.client_payload.version }}"
+          version="${{ github.event.inputs.version }}"
           version="${version#v}"
           if [ -z "$version" ]; then
-            echo "::error::No version provided"
-            exit 1
+            version=$(gh release view --repo conplementAG/copsctl --json tagName -q .tagName | sed 's/^v//')
+            echo "No version provided — using latest copsctl release: v$version"
           fi
 
           checksums_url="https://github.com/conplementAG/copsctl/releases/download/v${version}/checksums.txt"
@@ -42,8 +39,8 @@ jobs:
 
           darwin_x86_64_sha=$(awk '$2 == "copsctl_Darwin_x86_64.tar.gz" {print $1}' checksums.txt)
           darwin_arm64_sha=$(awk  '$2 == "copsctl_Darwin_arm64.tar.gz"  {print $1}' checksums.txt)
-          linux_x86_64_sha=$(awk  '$2 == "copsctl_Linux_x86_64.tar.gz"   {print $1}' checksums.txt)
-          linux_arm64_sha=$(awk   '$2 == "copsctl_Linux_arm64.tar.gz"    {print $1}' checksums.txt)
+          linux_x86_64_sha=$(awk   '$2 == "copsctl_Linux_x86_64.tar.gz"   {print $1}' checksums.txt)
+          linux_arm64_sha=$(awk    '$2 == "copsctl_Linux_arm64.tar.gz"    {print $1}' checksums.txt)
 
           for name in darwin_x86_64_sha darwin_arm64_sha linux_x86_64_sha linux_arm64_sha; do
             if [ -z "${!name}" ]; then
@@ -77,22 +74,15 @@ jobs:
           sed -i -E "s/linux_x86_64_sha = \"(.*)\"/linux_x86_64_sha = \"${LINUX_X86_64_SHA}\"/" Formula/copsctl.rb
           sed -i -E "s/linux_arm64_sha = \"(.*)\"/linux_arm64_sha = \"${LINUX_ARM64_SHA}\"/" Formula/copsctl.rb
 
-      - name: Create a release pull request
-        id: cpr
-        uses: peter-evans/create-pull-request@v7
-        with:
-          # A PAT/App token lets the opened PR trigger the test workflow so that
-          # auto-merge can wait for the required status checks. Falls back to the
-          # default token (CI will not run on the PR in that case).
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.GITHUB_TOKEN }}
-          commit-message: Release CLI v${{ steps.meta.outputs.version }}
-          body: Release CLI v${{ steps.meta.outputs.version }}
-          branch: release-v${{ steps.meta.outputs.version }}
-          title: 'Release CLI v${{ steps.meta.outputs.version }}'
-
-      - name: Enable auto-merge
-        if: steps.cpr.outputs.pull-request-number
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Commit and push
         run: |
-          gh pr merge ${{ steps.cpr.outputs.pull-request-number }} --auto --squash
+          set -euo pipefail
+          if git diff --quiet -- Formula/copsctl.rb; then
+            echo "Formula already at v${{ steps.meta.outputs.version }} — nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/copsctl.rb
+          git commit -m "Update copsctl to v${{ steps.meta.outputs.version }}"
+          git push

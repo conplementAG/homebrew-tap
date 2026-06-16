@@ -84,7 +84,7 @@ jobs:
           # A PAT/App token lets the opened PR trigger the test workflow so that
           # auto-merge can wait for the required status checks. Falls back to the
           # default token (CI will not run on the PR in that case).
-          token: ${{ secrets.TAP_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.GITHUB_TOKEN }}
           commit-message: Release CLI v${{ steps.meta.outputs.version }}
           body: Release CLI v${{ steps.meta.outputs.version }}
           branch: release-v${{ steps.meta.outputs.version }}
@@ -93,6 +93,6 @@ jobs:
       - name: Enable auto-merge
         if: steps.cpr.outputs.pull-request-number
         env:
-          GH_TOKEN: ${{ secrets.TAP_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           gh pr merge ${{ steps.cpr.outputs.pull-request-number }} --auto --squash

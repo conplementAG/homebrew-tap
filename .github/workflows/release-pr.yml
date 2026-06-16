@@ -1,21 +1,16 @@
 name: release-pr
 
 on:
+  # Triggered automatically by the copsctl release workflow once a new
+  # release has been published (see conplementAG/copsctl .github/workflows/release.yml).
+  repository_dispatch:
+    types: [copsctl-release]
+
+  # Manual fallback: provide the version, checksums are resolved automatically.
   workflow_dispatch:
     inputs:
       version:
-        type: string
-        required: true
-      darwin_x86_64_sha:
-        type: string
-        required: true
-      darwin_arm64_sha:
-        type: string
-        required: true
-      linux_x86_64_sha:
-        type: string
-        required: true
-      linux_arm64_sha:
+        description: copsctl version to release (with or without leading "v")
         type: string
         required: true
 
@@ -30,19 +25,74 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Change to a new release
+      - name: Resolve version and checksums
+        id: meta
         run: |
-          sed -i -E "s/version \"(.*)\"/version \"${{ github.event.inputs.version }}\"/" Formula/copsctl.rb
-          sed -i -E "s/darwin_x86_64_sha = \"(.*)\"/darwin_x86_64_sha = \"${{ github.event.inputs.darwin_x86_64_sha }}\"/" Formula/copsctl.rb
-          sed -i -E "s/darwin_arm64_sha = \"(.*)\"/darwin_arm64_sha = \"${{ github.event.inputs.darwin_arm64_sha }}\"/" Formula/copsctl.rb
-          sed -i -E "s/linux_x86_64_sha = \"(.*)\"/linux_x86_64_sha = \"${{ github.event.inputs.linux_x86_64_sha }}\"/" Formula/copsctl.rb
-          sed -i -E "s/linux_arm64_sha = \"(.*)\"/linux_arm64_sha = \"${{ github.event.inputs.linux_arm64_sha }}\"/" Formula/copsctl.rb
+          set -euo pipefail
+
+          version="${{ github.event.inputs.version || github.event.client_payload.version }}"
+          version="${version#v}"
+          if [ -z "$version" ]; then
+            echo "::error::No version provided"
+            exit 1
+          fi
+
+          checksums_url="https://github.com/conplementAG/copsctl/releases/download/v${version}/checksums.txt"
+          curl -fsSL "$checksums_url" -o checksums.txt
+
+          darwin_x86_64_sha=$(awk '$2 == "copsctl_Darwin_x86_64.tar.gz" {print $1}' checksums.txt)
+          darwin_arm64_sha=$(awk  '$2 == "copsctl_Darwin_arm64.tar.gz"  {print $1}' checksums.txt)
+          linux_x86_64_sha=$(awk  '$2 == "copsctl_Linux_x86_64.tar.gz"   {print $1}' checksums.txt)
+          linux_arm64_sha=$(awk   '$2 == "copsctl_Linux_arm64.tar.gz"    {print $1}' checksums.txt)
+
+          for name in darwin_x86_64_sha darwin_arm64_sha linux_x86_64_sha linux_arm64_sha; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing checksum for $name in $checksums_url"
+              exit 1
+            fi
+          done
+
+          {
+            echo "version=$version"
+            echo "darwin_x86_64_sha=$darwin_x86_64_sha"
+            echo "darwin_arm64_sha=$darwin_arm64_sha"
+            echo "linux_x86_64_sha=$linux_x86_64_sha"
+            echo "linux_arm64_sha=$linux_arm64_sha"
+          } >> "$GITHUB_OUTPUT"
+
+          rm -f checksums.txt
+
+      - name: Update the formula
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          DARWIN_X86_64_SHA: ${{ steps.meta.outputs.darwin_x86_64_sha }}
+          DARWIN_ARM64_SHA: ${{ steps.meta.outputs.darwin_arm64_sha }}
+          LINUX_X86_64_SHA: ${{ steps.meta.outputs.linux_x86_64_sha }}
+          LINUX_ARM64_SHA: ${{ steps.meta.outputs.linux_arm64_sha }}
+        run: |
+          set -euo pipefail
+          sed -i -E "s/version \"(.*)\"/version \"${VERSION}\"/" Formula/copsctl.rb
+          sed -i -E "s/darwin_x86_64_sha = \"(.*)\"/darwin_x86_64_sha = \"${DARWIN_X86_64_SHA}\"/" Formula/copsctl.rb
+          sed -i -E "s/darwin_arm64_sha = \"(.*)\"/darwin_arm64_sha = \"${DARWIN_ARM64_SHA}\"/" Formula/copsctl.rb
+          sed -i -E "s/linux_x86_64_sha = \"(.*)\"/linux_x86_64_sha = \"${LINUX_X86_64_SHA}\"/" Formula/copsctl.rb
+          sed -i -E "s/linux_arm64_sha = \"(.*)\"/linux_arm64_sha = \"${LINUX_ARM64_SHA}\"/" Formula/copsctl.rb
 
       - name: Create a release pull request
         id: cpr
         uses: peter-evans/create-pull-request@v7
         with:
-          commit-message: Release CLI v${{ github.event.inputs.version }}
-          body: Release CLI v${{ github.event.inputs.version }}
-          branch: release-v${{ github.event.inputs.version }}
-          title: 'Release CLI v${{ github.event.inputs.version }}'
+          # A PAT/App token lets the opened PR trigger the test workflow so that
+          # auto-merge can wait for the required status checks. Falls back to the
+          # default token (CI will not run on the PR in that case).
+          token: ${{ secrets.TAP_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          commit-message: Release CLI v${{ steps.meta.outputs.version }}
+          body: Release CLI v${{ steps.meta.outputs.version }}
+          branch: release-v${{ steps.meta.outputs.version }}
+          title: 'Release CLI v${{ steps.meta.outputs.version }}'
+
+      - name: Enable auto-merge
+        if: steps.cpr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ secrets.TAP_PR_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${{ steps.cpr.outputs.pull-request-number }} --auto --squash

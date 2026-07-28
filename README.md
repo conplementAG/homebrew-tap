@@ -62,6 +62,8 @@ gh workflow run update-formula.yml --repo conplementAG/homebrew-tap -f version=0
 ```
 
 The workflow resolves the checksums automatically and commits the bump to `main`.
+When something was committed, it then runs the **test** workflow against that
+commit; if nothing changed, the test job is skipped.
 
 ## Contributing
 

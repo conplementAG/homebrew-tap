@@ -9,6 +9,16 @@ on:
 
   workflow_dispatch:
 
+  # Called by update-formula.yml after it bumps the formula: a push made with the
+  # workflow's GITHUB_TOKEN does not trigger the push event above.
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit or ref to test (defaults to the triggering ref)
+        type: string
+        required: false
+        default: ""
+
 # Note: all jobs in this workflow run on GitHub-hosted runners.
 # None of them need authenticated (token) access to the repository.
 #
@@ -27,14 +37,16 @@ jobs:
           - ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Configure Git
-        uses: Homebrew/actions/git-user-config@master
+        uses: Homebrew/actions/git-user-config@main
 
       # This action automatically installs the locally checked out tap.
       - name: Set up Homebrew
-        uses: Homebrew/actions/setup-homebrew@master
+        uses: Homebrew/actions/setup-homebrew@main
 
       - name: Check the CLI formula
         run: |
